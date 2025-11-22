@@ -1,21 +1,57 @@
 // src/middlewares/rbac.js
 
-function requireRole(roleName) {
+/**
+ * Require one or more roles to access a route.
+ * Example: requireRoles("superadmin", "admin")
+ */
+function requireRoles(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-    if (req.user.role !== roleName) return res.status(403).json({ message: 'Forbidden' });
-    next();
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: insufficient permissions",
+      });
+    }
+
+    return next();
   };
 }
 
-// check if current user is superadmin
+/**
+ * Check if user is Super Admin
+ */
 function isSuperAdmin(user) {
-  return user && user.role === 'superadmin';
+  return user?.role === "superadmin";
 }
 
-// check if user is admin of the same school
+/**
+ * Check if user is Admin of the same school
+ */
 function isSchoolAdminOf(user, schoolId) {
-  return user && user.role === 'admin' && Number(user.schoolId) === Number(schoolId);
+  return (
+    user &&
+    user.role === "admin" &&
+    Number(user.schoolId) === Number(schoolId)
+  );
 }
 
-module.exports = { requireRole, isSuperAdmin, isSchoolAdminOf };
+/**
+ * Check if user belongs to same school (for teachers, staff, etc.)
+ */
+function isSameSchool(user, schoolId) {
+  return Number(user?.schoolId) === Number(schoolId);
+}
+
+module.exports = {
+  requireRoles,
+  isSuperAdmin,
+  isSchoolAdminOf,
+  isSameSchool,
+};

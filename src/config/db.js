@@ -4,15 +4,38 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 function createSequelizeInstance() {
-  if (process.env.NODE_ENV === 'test') {
-    return new Sequelize('sqlite::memory:', { logging: false });
+  const {
+    NODE_ENV,
+    DB_NAME,
+    DB_USER,
+    DB_PASS,
+    DB_HOST,
+    DB_PORT
+  } = process.env;
+
+  // Test environment → use in-memory SQLite
+  if (NODE_ENV === 'test') {
+    return new Sequelize('sqlite::memory:', {
+      logging: false,
+    });
   }
 
-  return new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASS, {
-    host: process.env.DB_HOST,
+  // Main database (MySQL)
+  return new Sequelize(DB_NAME, DB_USER, DB_PASS, {
+    host: DB_HOST || 'localhost',
     dialect: 'mysql',
+    port: DB_PORT ? Number(DB_PORT) : 3306,
     logging: false,
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+    pool: {
+      max: 10,
+      min: 0,
+      idle: 10000,
+    },
+    define: {
+      timestamps: true,
+      underscored: false,
+      freezeTableName: false,
+    },
   });
 }
 

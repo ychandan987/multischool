@@ -1,26 +1,29 @@
 // src/models/index.js
-const sequelize = require('../config/db');
-const { DataTypes } = require('sequelize');
+const fs = require("fs");
+const path = require("path");
+const { DataTypes } = require("sequelize");
+const sequelize = require("../config/db");
 
-const Role = require('./role')(sequelize, DataTypes);
-const School = require('./school')(sequelize, DataTypes);
-const User = require('./user')(sequelize, DataTypes);
-const Student = require('./student')(sequelize, DataTypes);
+// container for all models
+const db = {};
 
-// associations
-School.hasMany(User, { foreignKey: 'schoolId', onDelete: 'CASCADE' });
-User.belongsTo(School, { foreignKey: 'schoolId' });
+// Load all model files dynamically (except index.js)
+fs.readdirSync(__dirname)
+  .filter((file) => file !== "index.js" && file.endsWith(".js"))
+  .forEach((file) => {
+    const model = require(path.join(__dirname, file))(sequelize, DataTypes);
+    db[model.name] = model;
+  });
 
-School.hasMany(Student, { foreignKey: 'schoolId', onDelete: 'CASCADE' });
-Student.belongsTo(School, { foreignKey: 'schoolId' });
+// Run associations if present
+Object.keys(db).forEach((modelName) => {
+  if (db[modelName].associate) {
+    db[modelName].associate(db);
+  }
+});
 
-Role.hasMany(User, { foreignKey: 'roleId' });
-User.belongsTo(Role, { foreignKey: 'roleId' });
+// Export sequelize instance + all models
+db.sequelize = sequelize;
+db.Sequelize = sequelize.constructor;
 
-module.exports = {
-  sequelize,
-  Role,
-  School,
-  User,
-  Student,
-};
+module.exports = db;
