@@ -1,42 +1,90 @@
 // src/tests/users.test.js
-const request = require('supertest');
-const app = require('../app');
-const { sequelize, Role, School, User } = require('../models');
-const { generatePassword } = require('../services/userService');
-const bcrypt = require('bcrypt');
+const request = require("supertest");
+const app = require("../app");
+const { sequelize, Role, School, User } = require("../models");
+const bcrypt = require("bcrypt");
+const { generateOnboardingPassword } = require("../services/userService");
+
+// disable email sending during tests
+process.env.SEND_EMAILS = "false";
 
 let adminToken;
 let schoolId;
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  const [r1, r2, r3] = await Role.bulkCreate([{ name: 'superadmin' }, { name: 'admin' }, { name: 'user' }]);
+
+  // create roles
+  const roles = await Role.bulkCreate([
+    { name: "superadmin" },
+    { name: "admin" },
+    { name: "user" },
+  ]);
+
+  const superRole = roles.find((r) => r.name === "superadmin");
+
+  // deterministic password
+  const fixedDate = new Date("2024-01-01");
+  const plainPassword = generateOnboardingPassword(
+    "9999999999",
+    "Super Admin",
+    fixedDate
+  );
+
+  const phash = await bcrypt.hash(plainPassword, 10);
+
   // create superadmin
-  const pass = generatePassword('9999999999', 'Super Admin', new Date());
-  const phash = await bcrypt.hash(pass, 10);
-  const sup = await User.create({ name: 'Super Admin', email: 'super@erp.test', phone: '9999999999', password_hash: phash, roleId: 1 });
-  const login = await request(app).post('/auth/login').send({ email: 'super@erp.test', password: pass });
+  await User.create({
+    name: "Super Admin",
+    email: "super@erp.test",
+    phone: "9999999999",
+    password_hash: phash,
+    roleId: superRole.id,
+    schoolId: null,
+  });
+
+  // login for token
+  const login = await request(app).post("/auth/login").send({
+    email: "super@erp.test",
+    password: plainPassword,
+  });
+
   adminToken = login.body.token;
 
-  // create a school
+  // create school
   const schoolResp = await request(app)
-    .post('/schools')
-    .set('Authorization', `Bearer ${adminToken}`)
-    .send({ name: 'Test School' });
-  schoolId = schoolResp.body.id;
+    .post("/schools")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .send({ name: "Test School" });
+
+  // improved /schools returns { success, data: {...} }
+  schoolId = schoolResp.body.data.id;
 });
 
-test('superadmin can create user and email contains generated password', async () => {
-  const newUser = { name: 'Alice', email: 'alice@test.com', phone: '1112223333', roleId: 3, canEditStudents: true };
+afterAll(async () => {
+  await sequelize.close();
+});
+
+test("superadmin can create user in school", async () => {
+  const newUser = {
+    name: "Alice",
+    email: "alice@test.com",
+    phone: "1112223333",
+    roleId: null, // user role doesn't matter here if service assigns or validate
+    canEditStudents: true,
+  };
+
   const resp = await request(app)
     .post(`/schools/${schoolId}/users`)
-    .set('Authorization', `Bearer ${adminToken}`)
+    .set("Authorization", `Bearer ${adminToken}`)
     .send(newUser);
 
   expect(resp.status).toBe(201);
-  expect(resp.body.email).toBe('alice@test.com');
+  expect(resp.body.data).toBeDefined();
+  expect(resp.body.data.email).toBe("alice@test.com");
 
-  // you can also check DB for created user
-  const dbUser = await User.findOne({ where: { email: 'alice@test.com' } });
-  expect(dbUser).toBeTruthy();
+  // verify in DB
+  const dbUser = await User.findOne({ where: { email: "alice@test.com" } });
+  expect(dbUser).not.toBeNull();
+  expect(dbUser.phone).toBe("1112223333");
 });
