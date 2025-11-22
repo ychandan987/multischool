@@ -3,24 +3,41 @@ require("dotenv").config();
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
-const app = express();
 
+const app = express();
 const { sequelize, Role } = require("./models");
 
 // -----------------------------------------
 // Middlewares
 // -----------------------------------------
 
-app.disable("x-powered-by"); // security
+app.disable("x-powered-by");
 
 app.use(
   express.json({
-    limit: "1mb", // prevent large payloads
+    limit: "1mb",
   })
 );
 
-app.use(helmet()); // secure headers
-app.use(cors());   // allow requests from frontend
+// Handle simple form submissions (optional)
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "1mb",
+  })
+);
+
+// Security headers
+app.use(helmet());
+
+// Frontend access
+app.use(cors());
+
+// Development request logger (optional)
+if (process.env.NODE_ENV === "development") {
+  const morgan = require("morgan");
+  app.use(morgan("dev"));
+}
 
 // -----------------------------------------
 // Routes
@@ -29,25 +46,24 @@ app.use(cors());   // allow requests from frontend
 const authRoutes = require("./routes/auth");
 const schoolsRoutes = require("./routes/schools");
 const usersRoutes = require("./routes/users");
-const usersRootRoutes = require("./routes/usersRoot");
+const usersRoot = require("./routes/usersRoot");
 const studentsRoutes = require("./routes/students");
 
 app.use("/auth", authRoutes);
 app.use("/schools", schoolsRoutes);
 
-// Important: more specific routes come before root-level routes
 app.use("/schools/:schoolId/users", usersRoutes);
 app.use("/schools/:schoolId/students", studentsRoutes);
 
-app.use("/users", usersRootRoutes);
+app.use("/users", usersRoot);
 
 // -----------------------------------------
-// Global Error Handler
+// Error Handler
 // -----------------------------------------
 app.use((err, req, res, next) => {
-  console.error("Unhandled Error:", err);
+  console.error("🔥 Unhandled Error:", err);
 
-  return res.status(err.status || 500).json({
+  res.status(err.status || 500).json({
     success: false,
     message:
       process.env.NODE_ENV === "production"
@@ -64,28 +80,32 @@ const PORT = process.env.PORT || 3000;
 
 async function init() {
   try {
-    // Sync ONLY in development
+    // Only sync in dev/test
     if (process.env.NODE_ENV !== "production") {
       await sequelize.sync({ alter: true });
     }
 
     // Ensure default roles
     const defaultRoles = ["superadmin", "admin", "user"];
-    for (const roleName of defaultRoles) {
-      await Role.findOrCreate({ where: { name: roleName } });
+    for (const r of defaultRoles) {
+      await Role.findOrCreate({ where: { name: r } });
     }
 
     if (process.env.NODE_ENV !== "test") {
       app.listen(PORT, () =>
-        console.log(`Server running on port ${PORT}`)
+        console.log(`🚀 Server running on port ${PORT}`)
       );
     }
   } catch (err) {
-    console.error("Failed to initialize server:", err);
+    console.error("❌ Failed to initialize server:", err);
     process.exit(1);
   }
 }
 
 init();
 
-module.exports = app; // for tests
+// Graceful shutdown (optional)
+process.on("SIGTERM", () => console.log("SIGTERM received, shutting down..."));
+process.on("SIGINT", () => console.log("SIGINT received, shutting down..."));
+
+module.exports = app;
